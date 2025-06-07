@@ -91,7 +91,7 @@ vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 
 -- [[ Setting options ]]
 -- See `:help vim.o`
@@ -102,7 +102,7 @@ vim.g.have_nerd_font = false
 vim.o.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.o.relativenumber = true
+vim.o.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.o.mouse = 'a'
@@ -152,6 +152,10 @@ vim.o.splitbelow = true
 vim.o.list = true
 vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
 
+-- vim.opt.spell = true -- Enable spell checking
+-- vim.opt.spelllang = { 'en_us' } -- Set the spell checking language to English (US)
+-- vim.opt.spelloptions = 'camel'
+
 -- Preview substitutions live, as you type!
 vim.o.inccommand = 'split'
 
@@ -165,6 +169,9 @@ vim.o.scrolloff = 10
 -- instead raise a dialog asking if you wish to save the current file(s)
 -- See `:help 'confirm'`
 vim.o.confirm = true
+
+-- Set spellfile for custom dictionary
+vim.o.spellfile = vim.fn.stdpath 'config' .. '/spell/en.utf-8.add'
 
 -- [[ Basic Keymaps ]]
 --  See `:help vim.keymap.set()`
@@ -219,6 +226,17 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+-- Return to last edit position when opening files
+vim.api.nvim_create_autocmd('BufReadPost', {
+  callback = function()
+    local mark = vim.api.nvim_buf_get_mark(0, '"')
+    local lcount = vim.api.nvim_buf_line_count(0)
+    if mark[1] > 0 and mark[1] <= lcount then
+      pcall(vim.api.nvim_win_set_cursor, 0, mark)
+    end
+  end,
+})
+
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
 local lazypath = vim.fn.stdpath 'data' .. '/lazy/lazy.nvim'
@@ -247,7 +265,28 @@ rtp:prepend(lazypath)
 -- NOTE: Here is where you install your plugins.
 require('lazy').setup({
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
-  'NMAC427/guess-indent.nvim', -- Detect tabstop and shiftwidth automatically
+  -- 'NMAC427/guess-indent.nvim', -- Detect tabstop and shiftwidth automatically
+  {
+    'NMAC427/guess-indent.nvim',
+    config = function()
+      require('guess-indent').setup {
+        auto_cmd = true, -- Automatically run when opening a file
+      }
+      -- Fallback to 4 spaces for C files when detection fails
+      vim.api.nvim_create_autocmd('FileType', {
+        pattern = { 'c', 'cpp', 'h', 'hpp' },
+        callback = function()
+          -- Check if guess-indent failed to set proper values
+          if vim.bo.shiftwidth == 0 or not vim.bo.expandtab then
+            vim.bo.expandtab = true
+            vim.bo.tabstop = 4
+            vim.bo.shiftwidth = 4
+            vim.bo.softtabstop = 4
+          end
+        end,
+      })
+    end,
+  },
 
   -- NOTE: Plugins can also be added by using a table,
   -- with the first argument being the link and the following
@@ -435,7 +474,8 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
-      vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
+      vim.keymap.set('n', '<leader><leader>', builtin.find_files, { desc = '[S]earch [F]iles' })
+      -- vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
 
       -- Slightly advanced example of overriding default behavior and theme
       vim.keymap.set('n', '<leader>/', function()
@@ -466,6 +506,7 @@ require('lazy').setup({
   {
     -- `lazydev` configures Lua LSP for your Neovim config, runtime and plugins
     -- used for completion, annotations and signatures of Neovim apis
+    --
     'folke/lazydev.nvim',
     ft = 'lua',
     opts = {
@@ -572,6 +613,8 @@ require('lazy').setup({
           --  the definition of its *type*, not where it was *defined*.
           map('grt', require('telescope.builtin').lsp_type_definitions, '[G]oto [T]ype Definition')
 
+          vim.lsp.enable 'cspell_ls'
+
           -- This function resolves a difference between neovim nightly (version 0.11) and stable (version 0.10)
           ---@param client vim.lsp.Client
           ---@param method vim.lsp.protocol.Method
@@ -626,12 +669,24 @@ require('lazy').setup({
         end,
       })
 
+      -- [[ Configure Diagnostic Signs ]]
+      vim.api.nvim_set_hl(0, 'DiagnosticUnderlineInfo', { undercurl = true })
+
       -- Diagnostic Config
       -- See :help vim.diagnostic.Opts
       vim.diagnostic.config {
         severity_sort = true,
         float = { border = 'rounded', source = 'if_many' },
-        underline = { severity = vim.diagnostic.severity.ERROR },
+        -- underline = { severity = vim.diagnostic.severity.ERROR },
+        underline = true,
+        -- underline = {
+        --   -- Different underline styles for different severities
+        --   -- INOF
+        --   [vim.diagnostic.severity.ERROR] = true,
+        --   [vim.diagnostic.severity.WARN] = true,
+        --   [vim.diagnostic.severity.INFO] = false,
+        --   [vim.diagnostic.severity.HINT] = true, -- Wavy underline for spell check
+        -- },
         signs = vim.g.have_nerd_font and {
           text = {
             [vim.diagnostic.severity.ERROR] = '󰅚 ',
@@ -647,7 +702,7 @@ require('lazy').setup({
             local diagnostic_message = {
               [vim.diagnostic.severity.ERROR] = diagnostic.message,
               [vim.diagnostic.severity.WARN] = diagnostic.message,
-              [vim.diagnostic.severity.INFO] = diagnostic.message,
+              -- [vim.diagnostic.severity.INFO] = diagnostic.message, -- Hide spellcheck messages
               [vim.diagnostic.severity.HINT] = diagnostic.message,
             }
             return diagnostic_message[diagnostic.severity]
@@ -671,8 +726,65 @@ require('lazy').setup({
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
-        -- clangd = {},
-        -- gopls = {},
+        clangd = {
+          cmd = {
+            'clangd',
+            '--background-index',
+            '--clang-tidy',
+            '--header-insertion=iwyu',
+            '--completion-style=detailed',
+            '--function-arg-placeholders',
+            '--fallback-style=llvm',
+          },
+          -- cmd = {
+          --   'docker',
+          --   'exec',
+          --   '-i',
+          --   'rpi3-toolchain',
+          --   'clangd',
+          --   '--background-index',
+          --   '--clang-tidy',
+          -- },
+          capabilities = {
+            offsetEncoding = { 'utf-16' },
+          },
+        },
+        gopls = {
+          default_config = {
+            cmd = { 'gopls' },
+            filetypes = { 'go', 'gomod', 'gowork', 'gotmpl' },
+            root_dir = function(fname)
+              local util = require 'lspconfig.util'
+              local async = require 'lspconfig.async'
+              local mod_cache = nil
+
+              -- see: https://github.com/neovim/nvim-lspconfig/issues/804
+              if not mod_cache then
+                local result = async.run_command { 'go', 'env', 'GOMODCACHE' }
+                if result and result[1] then
+                  mod_cache = vim.trim(result[1])
+                else
+                  mod_cache = vim.fn.system 'go env GOMODCACHE'
+                end
+              end
+              if mod_cache and fname:sub(1, #mod_cache) == mod_cache then
+                local clients = vim.lsp.get_clients { name = 'gopls' }
+                if #clients > 0 then
+                  return clients[#clients].config.root_dir
+                end
+              end
+              return util.root_pattern('go.work', 'go.mod', '.git')(fname)
+            end,
+            single_file_support = true,
+          },
+          docs = {
+            description = [[
+https://github.com/golang/tools/tree/master/gopls
+
+Google's lsp server for golang.
+]],
+          },
+        },
         -- pyright = {},
         -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
@@ -682,7 +794,15 @@ require('lazy').setup({
         --
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
-        --
+
+        cspell = {
+          cmd = { 'cspell-lsp', '--stdio' },
+          filetypes = { 'markdown', 'text', 'gitcommit', 'lua', 'go', 'c', 'cpp' },
+          root_dir = function(fname)
+            return require('lspconfig.util').root_pattern('.git', 'cspell.json', 'package.json')(fname)
+          end,
+          single_file_support = true,
+        },
 
         lua_ls = {
           -- cmd = { ... },
@@ -716,6 +836,7 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
+        'cspell',
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -857,6 +978,15 @@ require('lazy').setup({
         default = { 'lsp', 'path', 'snippets', 'lazydev' },
         providers = {
           lazydev = { module = 'lazydev.integrations.blink', score_offset = 100 },
+          cmdline = {
+            min_keyword_length = function(ctx)
+              -- when typing a command, only show when the keyword is 3 characters or longer
+              if ctx.mode == 'cmdline' and string.find(ctx.line, ' ') == nil then
+                return 3
+              end
+              return 0
+            end,
+          },
         },
       },
 
@@ -873,30 +1003,42 @@ require('lazy').setup({
 
       -- Shows a signature help window while you type arguments for a function
       signature = { enabled = true },
+
+      cmdline = {
+        completion = {
+          menu = {
+            auto_show = true, -- Automatically show the completion menu
+          },
+        },
+        keymap = {
+          ['<Tab>'] = { 'accept' },
+          ['<CR>'] = { 'accept_and_enter', 'fallback' },
+        },
+      },
     },
   },
 
-  { -- You can easily change to a different colorscheme.
-    -- Change the name of the colorscheme plugin below, and then
-    -- change the command in the config to whatever the name of that colorscheme is.
-    --
-    -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'folke/tokyonight.nvim',
-    priority = 1000, -- Make sure to load this before all the other start plugins.
-    config = function()
-      ---@diagnostic disable-next-line: missing-fields
-      require('tokyonight').setup {
-        styles = {
-          comments = { italic = false }, -- Disable italics in comments
-        },
-      }
-
-      -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
-    end,
-  },
+  -- { -- You can easily change to a different colorscheme.
+  --   -- Change the name of the colorscheme plugin below, and then
+  --   -- change the command in the config to whatever the name of that colorscheme is.
+  --   --
+  --   -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
+  --   'folke/tokyonight.nvim',
+  --   priority = 1000, -- Make sure to load this before all the other start plugins.
+  --   config = function()
+  --     ---@diagnostic disable-next-line: missing-fields
+  --     require('tokyonight').setup {
+  --       styles = {
+  --         comments = { italic = false }, -- Disable italics in comments
+  --       },
+  --     }
+  --
+  --     -- Load the colorscheme here.
+  --     -- Like many other themes, this one has different styles, and you could load
+  --     -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
+  --     vim.cmd.colorscheme 'tokyonight-night'
+  --   end,
+  -- },
 
   -- Highlight todo, notes, etc in comments
   { 'folke/todo-comments.nvim', event = 'VimEnter', dependencies = { 'nvim-lua/plenary.nvim' }, opts = { signs = false } },
@@ -918,6 +1060,12 @@ require('lazy').setup({
       -- - sd'   - [S]urround [D]elete [']quotes
       -- - sr)'  - [S]urround [R]eplace [)] [']
       require('mini.surround').setup()
+
+      -- require('mini.tabline').setup()
+
+      require('mini.sessions').setup {
+        autoread = true,
+      }
 
       -- Simple and easy statusline.
       --  You could remove this setup call if you don't like it,
@@ -976,15 +1124,15 @@ require('lazy').setup({
   -- require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
-  -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.autopairs',
+  require 'kickstart.plugins.neo-tree',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
@@ -1010,6 +1158,16 @@ require('lazy').setup({
       lazy = '💤 ',
     },
   },
+})
+
+-- Auto-load project-specific config
+vim.api.nvim_create_autocmd('DirChanged', {
+  callback = function()
+    local project_config = vim.fn.getcwd() .. '/.nvim.lua'
+    if vim.fn.filereadable(project_config) == 1 then
+      dofile(project_config)
+    end
+  end,
 })
 
 -- The line beneath this is called `modeline`. See `:help modeline`
